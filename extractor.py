@@ -1,58 +1,35 @@
 from pypdf import PdfReader
 from pptx import Presentation
 
+MAX_CHARS = 32000
 
 def extract_pdf(file):
-
-    text = ""
-
+    parts = []
     reader = PdfReader(file)
-
-    for page in reader.pages:
-
-        page_text = page.extract_text()
-
-        if page_text:
-            text += page_text + "\n"
-
-    return text
-
+    for page in reader.pages[:30]:
+        text = page.extract_text()
+        if text:
+            parts.append(text)
+        if len("\n".join(parts)) >= MAX_CHARS:
+            break
+    return "\n".join(parts)[:MAX_CHARS]
 
 def extract_ppt(file):
-
-    text = ""
-
     presentation = Presentation(file)
-
-    for slide_number, slide in enumerate(
-        presentation.slides, start=1
-    ):
-
-        text += f"\n--- Slide {slide_number} ---\n"
-
+    parts = []
+    for number, slide in enumerate(presentation.slides, 1):
+        parts.append(f"\n--- Slide {number} ---")
         for shape in slide.shapes:
-
-            if hasattr(shape, "text"):
-
-                if shape.text.strip():
-
-                    text += shape.text + "\n"
-
-    return text
-
+            if hasattr(shape, "text") and shape.text.strip():
+                parts.append(shape.text.strip())
+        if len("\n".join(parts)) >= MAX_CHARS:
+            break
+    return "\n".join(parts)[:MAX_CHARS]
 
 def extract_text(file):
-
-    filename = file.name.lower()
-
-    if filename.endswith(".pdf"):
-
+    name = file.name.lower()
+    if name.endswith(".pdf"):
         return extract_pdf(file)
-
-    elif filename.endswith(".pptx"):
-
+    if name.endswith(".pptx"):
         return extract_ppt(file)
-
-    else:
-
-        return "Unsupported file type."
+    return ""
