@@ -1,13 +1,12 @@
 import os
 import json
-import time
-
-from dotenv import load_dotenv
+import streamlit as st
 from google import genai
 
 
-# Load API key
-load_dotenv()
+# --------------------------------------------------
+# GET GEMINI API KEY
+# --------------------------------------------------
 
 API_KEY = os.getenv("GEMINI_API_KEY")
 
@@ -16,72 +15,47 @@ if not API_KEY:
         API_KEY = st.secrets["GEMINI_API_KEY"]
     except Exception:
         API_KEY = None
-    )
 
 
-# Create Gemini client
-client = genai.Client(
-    api_key=API_KEY
-)
-
+# --------------------------------------------------
+# AI ANALYSIS FUNCTION
+# --------------------------------------------------
 
 def analyze_project(project_text):
 
-    prompt = f"""
-You are ProjectLens, an AI Project Evaluation Agent.
+    if not API_KEY:
+        return {
+            "error": "Gemini API key is not configured."
+        }
 
-Analyze the following student project like an experienced
-project evaluator.
+    try:
+        client = genai.Client(api_key=API_KEY)
 
-PROJECT CONTENT:
-----------------
+        prompt = f"""
+You are ProjectLens, an AI-powered student project evaluator.
+
+Analyze the project information below.
+
+IMPORTANT RULES:
+- Analyze ONLY the information provided.
+- Do not invent technologies, features, results, or facts.
+- If source code is not provided, do not claim that you found an actual code bug.
+- For a PDF or PPT, identify potential technical, logical, design, or feasibility concerns.
+- Give practical suggestions suitable for a student project.
+- Return ONLY valid JSON.
+- Do not use markdown.
+- Do not add explanations outside the JSON.
+
+PROJECT INFORMATION:
+
 {project_text}
-----------------
 
-Evaluate:
 
-1. Problem Statement
-2. Objectives
-3. Proposed Solution
-4. Technology Selection
-5. Methodology
-6. Innovation
-7. Feasibility
-8. Completeness
-9. Expected Outcome
-10. Presentation Quality
-
-Also identify:
-
-- Strengths
-- Critical issues
-- Potential technical or logical problems
-- Missing components
-- Weak explanations
-- Unrealistic claims
-- Implementation risks
-- Recommended features
-- Specific improvements
-- Action plan
-
-IMPORTANT:
-Do not invent information.
-
-If something is not available in the project document,
-say that the information is missing.
-
-If no source code is provided, do not claim that you found
-an actual code bug. Instead call it a potential technical
-or logical issue.
-
-Return ONLY valid JSON.
-
-Use exactly this structure:
+Return JSON using exactly this structure:
 
 {{
-    "project_name": "Project name",
-
-    "summary": "Short project summary",
+    "project_name": "",
+    "summary": "",
 
     "project_health": 0,
 
@@ -94,109 +68,73 @@ Use exactly this structure:
         "presentation": 0
     }},
 
-    "strengths": [
-        "strength 1",
-        "strength 2"
-    ],
+    "strengths": [],
 
     "critical_issues": [
         {{
-            "issue": "Issue description",
-            "why_it_matters": "Why this issue matters",
-            "severity": "High"
+            "issue": "",
+            "why_it_matters": "",
+            "severity": ""
         }}
     ],
 
     "potential_bugs": [
         {{
-            "bug": "Potential technical or logical problem",
-            "explanation": "Explanation",
-            "severity": "Medium"
+            "bug": "",
+            "explanation": "",
+            "severity": ""
         }}
     ],
 
-    "missing_components": [
-        "Missing component 1",
-        "Missing component 2"
-    ],
+    "missing_components": [],
 
     "improvements": [
         {{
-            "area": "Area",
-            "current_problem": "What is weak",
-            "suggestion": "What should be improved",
-            "priority": "High"
+            "area": "",
+            "current_problem": "",
+            "suggestion": "",
+            "priority": ""
         }}
     ],
 
-    "recommended_features": [
-        "Feature 1",
-        "Feature 2"
-    ],
+    "recommended_features": [],
 
     "action_plan": [
         {{
             "step": 1,
-            "action": "Action to perform",
-            "priority": "High"
+            "action": "",
+            "priority": ""
         }}
     ],
 
-    "final_summary": "Overall evaluation in simple language"
+    "final_summary": ""
 }}
 """
 
-    # Try Gemini up to 3 times if the server is temporarily busy
-    for attempt in range(3):
+        response = client.models.generate_content(
+            model="gemini-3.8-flash",
+            contents=prompt
+        )
 
-        try:
+        result_text = response.text.strip()
 
-            print(
-                f"🤖 Sending request to Gemini... "
-                f"(attempt {attempt + 1}/3)"
-            )
+        # Remove accidental markdown code fences
+        if result_text.startswith("```"):
+            result_text = result_text.replace("```json", "")
+            result_text = result_text.replace("```", "")
+            result_text = result_text.strip()
 
-            interaction = client.interactions.create(
-                model="gemini-3.8-flash",
-                input=prompt
-            )
+        result = json.loads(result_text)
 
-            response_text = interaction.output_text
+        return result
 
-            # Convert JSON text to Python dictionary
-            try:
-                return json.loads(response_text)
+    except json.JSONDecodeError:
+        return {
+            "error": "AI returned an invalid JSON response.",
+            "raw_response": result_text if "result_text" in locals() else ""
+        }
 
-            except json.JSONDecodeError:
-
-                return {
-                    "project_name": "Project Evaluation",
-                    "summary": "Gemini returned an unexpected format.",
-                    "project_health": 0,
-                    "scores": {},
-                    "strengths": [],
-                    "critical_issues": [],
-                    "potential_bugs": [],
-                    "missing_components": [],
-                    "improvements": [],
-                    "recommended_features": [],
-                    "action_plan": [],
-                    "final_summary": response_text
-                }
-
-        except Exception as e:
-
-            if attempt < 2:
-
-                print(
-                    "⚠️ Gemini is temporarily busy. "
-                    "Waiting 5 seconds before retrying..."
-                )
-
-                time.sleep(5)
-
-            else:
-
-                print("❌ Gemini request failed after 3 attempts.")
-
-                raise e
+    except Exception as e:
+        return {
+            "error": str(e)
+        }
